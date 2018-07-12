@@ -12,7 +12,7 @@ public class Comment {
 	
 	@Override
 	public String toString() {
-		return "Comment [id=" + id + ", postId=" + postId + ", userId=" + userId + ", text=" + text + ", date=" + date
+		return "Comment [id=" + id + ", postId=" + postId + ", userId=" + userId + ", content=" + text + ", date=" + date
 				+ "]";
 	}
 

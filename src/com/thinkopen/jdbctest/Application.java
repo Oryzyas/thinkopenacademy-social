@@ -1,17 +1,18 @@
 package com.thinkopen.jdbctest;
 
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
 
 public class Application {
+    private static final int DROPDOWN_LIST_LIMIT = 5;
+
     private static final MySQLAccess dao;
     private static final Scanner scanner;
     private static User user;
+    private static Post post;
 
     static {
         dao = new MySQLAccess();
@@ -19,113 +20,158 @@ public class Application {
     }
 	
 	public static void main(String[] args) throws ClassNotFoundException, SQLException {
-        System.out.println("Benvenuto. Inserire username e password.");
+        final String msg = "1 - Login; \n2 - Sign up ;\n3 - Esci ;\n\nRisposta";
 
-        String email = read("Email", t -> t.length() > 0 && t.length() <= 30, "Email non valida.");
-        String password = read("Password", t -> t.length() > 0 && t.length() <= 20, "Password non valida.");
+        System.out.println("Benvenuto\n");
 
-        if((user = dao.login(email, password)) != null) {
-            System.out.println("Utente loggato con successo.");
+        exit:
+        while(true) {
+            switch (read(msg, Integer::parseInt, r -> r >= 1 && r <= 3, "Risposta non valida")) {
+                case 1:
+                    String email = read("Email", t -> t.length() > 0 && t.length() <= 30, "Email non valida.");
+                    String password = read("Password", t -> t.length() > 0 && t.length() <= 20, "Password non valida.");
 
-            while(true) {
-                mainMenu();
-            }
-        } else {
-            System.out.println("Credenziali non valide.");
+                    if((user = dao.login(email, password)) != null) {
+                        showSuccess("Utente loggato con successo.");
+                        mainMenu();
+                    } else {
+                        showError("Credenziali errate.");
+                    }
 
-            if(read("Creare un nuovo utente?", str -> Boolean.parseBoolean(str), risp -> true, "Risposta non valida.")) {
-                createUser();
+                    break;
+                case 2:
+                    createUser();
+                    break;
+                case 3:
+                    System.out.println("\nArrivederci\n");
+                    break exit;
             }
         }
 	}
 
 	private static void mainMenu() throws SQLException, ClassNotFoundException {
-        final String msg = "1 - Visualizza gli ultimi post ;\n2 - Gestisci i propri post ;\n3 - Cambia password ;\n4 - Esci ;\n\nRisposta";
+        final String msg = "1 - Visualizza gli ultimi post ;\n2 - Cambia password ;\n3 - Logout ;\n\nRisposta";
 
-        int risp = read(msg, s -> Integer.parseInt(s), r -> r >= 1 && r <= 4, "Risposta non valida.");
+        logout:
+        while (true) {
+            int risp = read(msg, Integer::parseInt, r -> r >= 1 && r <= 3, "Risposta non valida.");
 
-        switch (risp) {
-            case 1:
-                showLastPosts();
-                break;
-            case 2:
-                break;
-            case 3:
-                break;
-            case 4:
-                break;
+            switch (risp) {
+                case 1:
+                    showLastPosts();
+                    break;
+                case 2:
+                    changePassword();
+                    break;
+                case 3:
+                    user = null;
+                    System.out.println("\nSei stato disconnesso.\n");
+                    break logout;
+            }
         }
     }
 
     private static void showLastPosts() throws SQLException, ClassNotFoundException {
-        List<Post> posts;
-        int limit = 3;
+        int postCount = dao.countPosts(null);
+        List<Post> posts = null;
         int offset = 0;
 
-        boolean morePostsRequest = false;
-
-        while((posts = dao.selectAllPostsByLimit(limit, offset)).size() > 0) {
-            offset += limit;
-            morePostsRequest = false;
-
-            for(Post p : posts) {
-                System.out.println(p);
+        while(true) {
+            if(postCount == 0) {
+                showError("Non ci sono post.");
+            } else {
+                posts = dao.selectAllPosts(null, DROPDOWN_LIST_LIMIT, offset, -1);
+                posts.forEach(System.out::println);
+                System.out.println();
             }
 
-            System.out.println();
-            int risp = postMenu();
-
-            switch (risp) {
+            switch (postsMenu()) {
                 case 1:
-                    commentMenu();
+                    createPost();
+                    postCount = dao.countPosts(null);
+                    offset = 0;
                     break;
                 case 2:
-                    morePostsRequest = true;
-                    continue;
+                    editPost();
+                    break;
                 case 3:
+                    deletePost();
+                    postCount = dao.countPosts(null);
+                    break;
+                case 4:
+                    post = dao.selectPostById(read("ID Post", Integer::parseInt, Application::postExists, "ID Post non valido."));
+                    showLastComments();
+                    post = null;
+                    offset = 0;
+                    break;
+                case 5:
+                    if(postCount > 0) {
+                        if(offset + DROPDOWN_LIST_LIMIT >= postCount)
+                            showError("Non ci sono ulteriori post da visualizzare.");
+                        else
+                            offset += posts.size();
+                    }
+                    continue;
+                case 6:
                     return;
             }
         }
-
-        if(morePostsRequest)
-            showError("Non ci sono ulteriori post da visualizzare.");
-
-        System.out.println();
     }
 
-    private static int postMenu() {
-        final String msg = "1 - Visualizza i commenti di un post;\n2 - Visualizza altri post;\n3 - Torna indietro;\n\nRisposta: ";
+    private static void showLastComments() throws SQLException, ClassNotFoundException {
+        int commentCount = dao.countComments(post.getId());
+        List<Comment> comments = null;
+        int offset = 0;
 
-        return read(msg, r -> Integer.parseInt(r), r -> r >= 1 && r <= 3, "Risposta non valida.");
-    }
+        while(true) {
 
-    private static void commentMenu() {
-        final String msg = "1 - Aggiungi un commento;\n2 - Modifica un commento;\n3 - Elimina un commento;\n4 - Torna indietro\n\nRisposta: ";
+            if(commentCount == 0) {
+                showError("Non ci sono commenti.");
+            } else {
+                comments = dao.selectAllComments(post.getId(), DROPDOWN_LIST_LIMIT, offset, -1);
+                comments.forEach(System.out::println);
+                System.out.println();
+            }
 
-        int risp = read(msg, r -> Integer.parseInt(r), r -> r >= 1 && r <= 4, "Risposta non valida.");
-
-        switch (risp) {
-            case 1:
-                try {
+            switch (commentsMenu()) {
+                case 1:
                     createComment();
-                    showSuccess("Creazione commento eseguita con successo.");
-                } catch (Exception e) {
-                    //e.printStackTrace();
-                    showError("Creazione commento fallita.");
-                }
-                break;
-            case 2:
-                try {
-                    createComment();
-                    showSuccess("Creazione commento eseguita con successo.");
-                } catch (Exception e) {
-                    //e.printStackTrace();
-                    showError("Creazione commento fallita.");
-                }
-                break;
-            case 3:
-                break;
+                    commentCount = dao.countComments(post.getId());
+                    offset = 0;
+                    break;
+                case 2:
+                    editComment();
+                    break;
+                case 3:
+                    deleteComment();
+                    commentCount = dao.countComments(post.getId());
+                    break;
+                case 4:
+                    if(commentCount > 0) {
+                        if(offset + DROPDOWN_LIST_LIMIT >= commentCount)
+                            showError("Non ci sono ulteriori commenti da visualizzare.");
+                        else
+                            offset += comments.size();
+                    }
+                    continue;
+                case 5:
+                    return;
+            }
         }
+    }
+
+    private static int postsMenu() {
+        final String msg = "1 - Aggiungi post;\n2 - Modifica post;\n3 - Rimuovi post;\n4 - Visualizza commenti;" +
+                "\n5 - Visualizza altri post;\n6 - Torna indietro;\n\nRisposta: ";
+
+        return read(msg, Integer::parseInt, r -> r >= 1 && r <= 6, "Risposta non valida.");
+    }
+
+    private static int commentsMenu() {
+        final String msg = "1 - Aggiungi commento;\n2 - Modifica commento;\n3 - Rimuovi commento;" +
+                "\n4 - Visualizza altri commenti;\n5 - Torna indietro;\n\nRisposta: ";
+
+        return read(msg, Integer::parseInt, r -> r >= 1 && r <= 5, "Risposta non valida.");
     }
 
 	private static <T> T read(String msg, Function<String, T> f, Predicate<T> test, String errMsg) {
@@ -138,101 +184,186 @@ public class Application {
                 if(!test.test(t))
                     throw new Exception();
 
+                System.out.println();
+
                 return t;
             } catch (Exception e) {
                 showError(errMsg);
-            } finally {
-                System.out.println();
             }
 
         }
     }
 
     private static void showSuccess(String msg) {
-        System.out.println("\n\t[ SUCCESS ]: " + msg);
+        System.out.println("\n\t[ SUCCESS ]: " + msg + "\n");
+        scanner.nextLine();
     }
 
     private static void showError(String errMsg) {
-        System.out.println("\n\t[ ERRORE ]: " + errMsg);
+        System.out.println("\n\t[ ERRORE ]: " + errMsg + "\n");
+        scanner.nextLine();
     }
 
     private static String read(String msg, Predicate<String> test, String errMsg) {
         return read(msg, str -> str, test, errMsg);
     }
 
-    private static User createUser() throws SQLException, ClassNotFoundException {
+    private static void createUser() throws SQLException, ClassNotFoundException {
         User user = new User();
         user.setNome(read("Nome", n -> n.length() > 0 && n.length() <= 50, "Lunghezza nome non valida."));
         user.setEmail(read("Email", e -> e.length() > 0 && e.length() <= 30, "Lunghezza mail non valida."));
         String password = read("Password", p -> p.length() > 0 && p.length() <= 20, "Lunghezza password non valida");
-        user.setEta(read("Età", str -> Integer.parseInt(str), e -> e > 0 && e <= 100, "Eta non valida."));
+        user.setEta(read("Età", Integer::parseInt, e -> e > 0 && e <= 100, "Eta non valida."));
 
-        dao.insert(user, password);
-
-        return user;
+        if(dao.insert(user, password) > 0) {
+            showSuccess("Account creato con successo.");
+        } else {
+            showError("Creazione account fallita.");
+        }
     }
 
-    private static Post createPost() throws SQLException, ClassNotFoundException {
+    private static void createPost() throws SQLException, ClassNotFoundException {
         Post post = new Post();
+
         post.setTitle(read("Titolo", t -> t.length() > 0 && t.length() <= 255, "Lunghezza titolo non valida."));
         post.setContent(read("Contenuto", t -> t.length() > 0 && t.length() <= 1024, "Lunghezza contenuto non valida."));
-        post.setClosed(read("Chiuso ai commenti?", str -> Boolean.parseBoolean(str), t -> true, "Risposta non valida."));
+        post.setClosed(read("Chiuso ai commenti?", Boolean::parseBoolean, t -> true, "Risposta non valida."));
+        post.setDate(System.currentTimeMillis());
         post.setUserId(user.getId());
 
-        dao.insert(post);
+        if(dao.insert(post) > 0) {
+            showSuccess("Post creato con successo.");
+        } else {
+            showError("Creazione post fallita.");
+        }
+    }
 
-        return post;
+    private static void editPost() throws SQLException, ClassNotFoundException {
+        int postId = read("ID Post", Integer::parseInt, Application::postExists, "ID Post non valido.");
+
+        if(!isPostOwner(postId)) {
+            showError("Non puoi modificare post altrui.");
+            return;
+        }
+
+        Post post = dao.selectPostById(postId);
+
+        post.setTitle(read("Titolo", t -> t.length() > 0 && t.length() <= 255, "Lunghezza titolo non valida."));
+        post.setContent(read("Contenuto", t -> t.length() > 0 && t.length() <= 1024, "Lunghezza contenuto non valida."));
+        post.setClosed(read("Chiuso ai commenti?", Boolean::parseBoolean, t -> true, "Risposta non valida."));
+        post.setDate(System.currentTimeMillis());
+
+        if(dao.update(post) > 0) {
+            showSuccess("Post aggiornato con successo.");
+        } else {
+            showError("Aggiornamento post fallito.");
+        }
+    }
+
+    private static void deletePost() throws SQLException, ClassNotFoundException {
+        int postId = read("ID Post", Integer::parseInt, Application::postExists, "ID Post non valido.");
+
+        if(!isPostOwner(postId)) {
+            showError("Non puoi eliminare post altrui.");
+            return;
+        }
+
+        Post post = dao.selectPostById(postId);
+
+        if(dao.delete(post) > 0) {
+            showSuccess("Post eliminato con successo.");
+        } else {
+            showError("Eliminazione post fallita.");
+        }
     }
 	
-	private static Comment createComment() throws ClassNotFoundException, SQLException {
-        int post = read("Post ID", str -> Integer.parseInt(str), postId -> postExists(postId), "ID post non valido.");
-
-        if(!postIsOpen(post)) {
+	private static void createComment() throws ClassNotFoundException, SQLException {
+        if(!postIsOpen(post.getId())) {
             showError("Il post è chiuso ai commenti.");
-            return null;
+            return;
         }
 
         String content = read("Commento", c -> c.length() > 0 && c.length() <= 140, "Lunghezza commento non valida.");
 		
 		Comment dto = new Comment();
 		dto.setContent(content);
-		dto.setPostId(post);
+		dto.setPostId(post.getId());
 		dto.setUserId(user.getId());
 		dto.setDate(System.currentTimeMillis());
-		
-		dao.insert(dto);
-		
-		return dto;
+
+        if(dao.insert(dto) > 0) {
+            showSuccess("Commento creato con successo.");
+        } else {
+            showError("Creazione commento fallita.");
+        }
 	}
 
-    /*private static Comment editComment() throws ClassNotFoundException, SQLException {
-        int commentID = read("Comment ID", str -> Integer.parseInt(str), postId -> postExists(postId), "ID post non valido.");
+    private static void editComment() throws ClassNotFoundException, SQLException {
+        int commentId = read("ID Commento", Integer::parseInt, Application::commentExists, "ID commento non valido.");
 
-        if(!postIsOpen(post)) {
-            showError("Il post è chiuso ai commenti.");
-            return null;
+        if(!isCommentOwner(commentId)) {
+            showError("Non puoi modificare commenti altrui.");
+            return;
         }
 
-        String content = read("Commento", c -> c.length() > 0 && c.length() <= 140, "Lunghezza commento non valida.");
-
-        Comment dto = new Comment();
-        dto.setContent(content);
-        dto.setPostId(post);
-        dto.setUserId(user.getId());
+        Comment dto = dao.selectCommentById(commentId);
+        dto.setContent(read("Commento", c -> c.length() > 0 && c.length() <= 140, "Lunghezza commento non valida."));
         dto.setDate(System.currentTimeMillis());
 
-        dao.insert(dto);
-
-        return dto;
-    }*/
-
-	private static boolean userExists(int id) {
-        try {
-            return dao.selectById(id) != null;
-        } catch (Exception e){
-            e.printStackTrace();
-            return false;
+        if(dao.update(dto) > 0) {
+            showSuccess("Commento aggiornato con successo.");
+        } else {
+            showError("Aggiornamento commento fallito.");
         }
+    }
+
+    private static void deleteComment() throws ClassNotFoundException, SQLException {
+        int commentId = read("ID Commento", Integer::parseInt, Application::commentExists, "ID commento non valido.");
+
+        if(!isCommentOwner(commentId)) {
+            showError("Non puoi eliminare commenti altrui.");
+            return;
+        }
+
+        Comment dto = dao.selectCommentById(commentId);
+
+        if(dao.delete(dto) > 0) {
+            showSuccess("Commento eliminato con successo.");
+        } else {
+            showError("Eliminazione commento fallita.");
+        }
+    }
+
+    private static void changePassword() throws SQLException, ClassNotFoundException {
+        final String currentPswd = read("Password corrente", str -> true, "Password non valida.");
+
+        if(dao.login(user.getEmail(), currentPswd) == null) {
+            showError("Password errata.");
+            return;
+        }
+
+        String newPassword = read("Nuova password", t -> t.length() > 0 && t.length() <= 20 && !t.equals(currentPswd), "Password non valida.");
+        String repeatPassowrd = read("Conferma password", t -> t.length() > 0 && t.length() <= 20, "Password non valida.");
+
+        if(!newPassword.equals(repeatPassowrd)) {
+            showError("Le password non corrispondono.");
+        } else {
+            if(dao.update(user.getId(), newPassword) > 0) {
+                showSuccess("Password aggiornata con successo.");
+            } else {
+                showError("Aggiornamento password fallito.");
+            }
+        }
+    }
+
+    private static boolean isPostOwner(int id) throws SQLException, ClassNotFoundException {
+        final Post post = dao.selectPostById(id);
+        return post.getUserId() == user.getId();
+    }
+
+    private static boolean isCommentOwner(int id) throws SQLException, ClassNotFoundException {
+        final Comment comment = dao.selectCommentById(id);
+        return comment.getUserId() == user.getId();
     }
 
     private static boolean postExists(int id) {
@@ -244,18 +375,13 @@ public class Application {
         }
     }
 
-    private static boolean postIsOpen(int id) {
-        try {
-            Post post = dao.selectPostById(id);
+    private static boolean postIsOpen(int id) throws SQLException, ClassNotFoundException {
+        Post post = dao.selectPostById(id);
 
-            if(post == null)
-                return false;
+        if(post == null)
+            throw new NullPointerException();
 
-            return !post.isClosed();
-        } catch (Exception e){
-            e.printStackTrace();
-            return false;
-        }
+        return !post.isClosed();
     }
 
     private static boolean commentExists(int id) {

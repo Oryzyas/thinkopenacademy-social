@@ -2,7 +2,10 @@ package com.thinkopen.jdbctest;
 
 import org.mariadb.jdbc.MySQLDataSource;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,11 +14,11 @@ public class MySQLAccess {
     private Connection con = null;
     //private PreparedStatement ps = null;
 
-    private Connection getConnection() throws ClassNotFoundException, SQLException {
+    private Connection getConnection() throws SQLException {
         /* Metodo 1
 
         // Caricare il driver
-        Class.forName("org.mariadb.jdbc.Driver");
+        Class.forName("com.mysql.jdbc.Driver");
 
         // Setup della Connection
         con = DriverManager.getConnection("jdbc:mysql://localhost/jdbctest?user=root&password=root");
@@ -172,7 +175,7 @@ public class MySQLAccess {
         return (rs.next()) ? rs.getInt("lastId") : -1;
     }
 
-    public void update(User user) throws SQLException, ClassNotFoundException {
+    public int update(User user) throws SQLException, ClassNotFoundException {
         final String query = "UPDATE users SET email=?, nome=?, eta=? WHERE id=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
@@ -181,10 +184,10 @@ public class MySQLAccess {
         ps.setInt(3, user.getEta());
         ps.setInt(4, user.getId());
 
-        ps.executeUpdate();
+        return ps.executeUpdate();
     }
 
-    public void update(Post post) throws SQLException, ClassNotFoundException {
+    public int update(Post post) throws SQLException, ClassNotFoundException {
         final String query = "UPDATE posts SET title=?, content=?, date=?, isClosed=? WHERE id=? AND userId=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
@@ -197,10 +200,10 @@ public class MySQLAccess {
         ps.setInt(5, post.getId());
         ps.setInt(6, post.getUserId());
 
-        ps.executeUpdate();
+        return ps.executeUpdate();
     }
 
-    public void update(Comment comment) throws SQLException, ClassNotFoundException {
+    public int update(Comment comment) throws SQLException, ClassNotFoundException {
         final String query = "UPDATE comments SET content=?, date=? WHERE id=? AND postId=? AND userId=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
@@ -212,41 +215,39 @@ public class MySQLAccess {
         ps.setInt(4, comment.getPostId());
         ps.setInt(5, comment.getUserId());
 
-        ps.executeUpdate();
+        return ps.executeUpdate();
     }
 
-    public User update(int id, String password) throws SQLException, ClassNotFoundException {
+    public int update(int id, String password) throws SQLException, ClassNotFoundException {
         final String query = "UPDATE users SET password=md5(?) WHERE id=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
         ps.setString(1, password);
         ps.setInt(2, id);
 
-        ps.executeUpdate();
-
-        return selectById(id);
+        return ps.executeUpdate();
     }
 
-    public void delete(int id) throws SQLException, ClassNotFoundException {
+    public int delete(int id) throws SQLException, ClassNotFoundException {
         final String query = "DELETE FROM users WHERE id=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
         ps.setInt(1, id);
 
-        ps.executeQuery();
+        return ps.executeUpdate();
     }
 
-    public void delete(Post post) throws SQLException, ClassNotFoundException {
+    public int delete(Post post) throws SQLException, ClassNotFoundException {
         final String query = "DELETE FROM posts WHERE id=? AND userId=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
         ps.setInt(1, post.getId());
         ps.setInt(2, post.getUserId());
 
-        ps.executeQuery();
+        return ps.executeUpdate();
     }
 
-    public void delete(Comment comment) throws SQLException, ClassNotFoundException {
+    public int delete(Comment comment) throws SQLException, ClassNotFoundException {
         final String query = "DELETE FROM comments WHERE id=? AND postId=? AND userId=?";
 
         PreparedStatement ps = getConnection().prepareStatement(query);
@@ -254,7 +255,7 @@ public class MySQLAccess {
         ps.setInt(2, comment.getPostId());
         ps.setInt(3, comment.getUserId());
 
-        ps.executeQuery();
+        return ps.executeUpdate();
     }
 
     public User login(String email, String password) throws SQLException, ClassNotFoundException {
@@ -306,18 +307,42 @@ public class MySQLAccess {
         return list;
     }
 
-    public List<Post> selectAllPosts() throws SQLException, ClassNotFoundException {
-        // Scrivere una query
-        final String query = "SELECT * FROM posts";
+    public List<Post> selectAllPosts(Integer userId, Integer limit, Integer offset, int sortedByDate) throws SQLException, ClassNotFoundException {
+        final StringBuilder queryBuilder = new StringBuilder("SELECT * FROM posts");
+
+        if(userId != null)
+            queryBuilder.append(" WHERE userId=?");
+
+        if(sortedByDate < 0)
+            queryBuilder.append(" ORDER BY date DESC");
+        else if(sortedByDate > 0)
+            queryBuilder.append(" ORDER BY date ASC");
+
+        if(limit != null)
+            queryBuilder.append(" LIMIT ?");
+
+        if(offset != null)
+            queryBuilder.append(" OFFSET ?");
+
+        final String query = queryBuilder.toString();
 
         // PreparedStatement
         PreparedStatement ps = getConnection().prepareStatement(query);
+        int phCounter = 1;
+
+        if(query.contains("userId=?"))
+            ps.setInt(phCounter++, userId);
+
+        if(query.contains("LIMIT"))
+            ps.setInt(phCounter++, limit);
+
+        if(query.contains("OFFSET"))
+            ps.setInt(phCounter, offset);
 
         // Eseguire la query (output: ResultSet)
         ResultSet rs = ps.executeQuery();
 
         // Leggere il ResultSet
-
         List<Post> posts = new ArrayList<>();
 
         while(rs.next()) {
@@ -336,50 +361,42 @@ public class MySQLAccess {
         return posts;
     }
 
-    public List<Post> selectAllPostsByLimit(int limit, int offset) throws SQLException, ClassNotFoundException {
-        // Scrivere una query
-        final String query = "SELECT * FROM posts ORDER BY date DESC LIMIT ? OFFSET ?";
+    public List<Comment> selectAllComments(Integer postId, Integer limit, Integer offset, int sortedByDate) throws SQLException, ClassNotFoundException {
+        final StringBuilder queryBuilder = new StringBuilder("SELECT * FROM comments");
+
+        if(postId != null)
+            queryBuilder.append(" WHERE postId=?");
+
+        if(sortedByDate < 0)
+            queryBuilder.append(" ORDER BY date DESC");
+        else if(sortedByDate > 0)
+            queryBuilder.append(" ORDER BY date ASC");
+
+        if(limit != null)
+            queryBuilder.append(" LIMIT ?");
+
+        if(offset != null)
+            queryBuilder.append(" OFFSET ?");
+
+        final String query = queryBuilder.toString();
 
         // PreparedStatement
         PreparedStatement ps = getConnection().prepareStatement(query);
-        ps.setInt(1, limit);
-        ps.setInt(2, offset);
+        int phCounter = 1;
+
+        if(query.contains("postId=?"))
+            ps.setInt(phCounter++, postId);
+
+        if(query.contains("LIMIT"))
+            ps.setInt(phCounter++, limit);
+
+        if(query.contains("OFFSET"))
+            ps.setInt(phCounter, offset);
 
         // Eseguire la query (output: ResultSet)
         ResultSet rs = ps.executeQuery();
 
         // Leggere il ResultSet
-
-        List<Post> posts = new ArrayList<>();
-
-        while(rs.next()) {
-            Post post = new Post();
-
-            post.setId(rs.getInt("id"));
-            post.setUserId(rs.getInt("userId"));
-            post.setTitle(rs.getString("title"));
-            post.setContent(rs.getString("content"));
-            post.setClosed(rs.getBoolean("isClosed"));
-            post.setDate(rs.getLong("date"));
-
-            posts.add(post);
-        }
-
-        return posts;
-    }
-
-    public List<Comment> selectAllComments() throws SQLException, ClassNotFoundException {
-        // Scrivere una query
-        final String query = "SELECT * FROM comments";
-
-        // PreparedStatement
-        PreparedStatement ps = getConnection().prepareStatement(query);
-
-        // Eseguire la query (output: ResultSet)
-        ResultSet rs = ps.executeQuery();
-
-        // Leggere il ResultSet
-
         List<Comment> comments = new ArrayList<>();
 
         while(rs.next()) {
@@ -397,34 +414,49 @@ public class MySQLAccess {
         return comments;
     }
 
-    public List<Comment> selectAllPostComments(int postId) throws SQLException, ClassNotFoundException {
-        // Scrivere una query
-        final String query = "SELECT * FROM comments WHERE postId=?";
+    public int countPosts(Integer userId) throws SQLException, ClassNotFoundException {
+        final StringBuilder queryBuilder = new StringBuilder("SELECT COUNT(*) AS N FROM posts");
+
+        if(userId != null)
+            queryBuilder.append(" WHERE userId=?");
+
+        final String query = queryBuilder.toString();
 
         // PreparedStatement
         PreparedStatement ps = getConnection().prepareStatement(query);
 
-        ps.setInt(1, postId);
+        if(query.contains("userId=?"))
+            ps.setInt(1, userId);
 
         // Eseguire la query (output: ResultSet)
         ResultSet rs = ps.executeQuery();
 
-        // Leggere il ResultSet
+        if(rs.next())
+            return rs.getInt("N");
 
-        List<Comment> comments = new ArrayList<>();
+        return -1;
+    }
 
-        while(rs.next()) {
-            Comment comment = new Comment();
+    public int countComments(Integer postId) throws SQLException, ClassNotFoundException {
+        final StringBuilder queryBuilder = new StringBuilder("SELECT COUNT(*) AS N FROM comments");
 
-            comment.setId(rs.getInt("id"));
-            comment.setPostId(rs.getInt("postId"));
-            comment.setUserId(rs.getInt("userId"));
-            comment.setContent(rs.getString("content"));
-            comment.setDate(rs.getLong("date"));
+        if(postId != null)
+            queryBuilder.append(" WHERE postId=?");
 
-            comments.add(comment);
-        }
+        final String query = queryBuilder.toString();
 
-        return comments;
+        // PreparedStatement
+        PreparedStatement ps = getConnection().prepareStatement(query);
+
+        if(query.contains("postId=?"))
+            ps.setInt(1, postId);
+
+        // Eseguire la query (output: ResultSet)
+        ResultSet rs = ps.executeQuery();
+
+        if(rs.next())
+            return rs.getInt("N");
+
+        return -1;
     }
 }

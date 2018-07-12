@@ -1,13 +1,7 @@
 package com.thinkopen.jdbctest;
 
 import java.text.SimpleDateFormat;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.util.Calendar;
 import java.util.Date;
-import java.util.GregorianCalendar;
 
 public class Post {
     private int id;
@@ -66,7 +60,7 @@ public class Post {
 
     public String toString() {
         SimpleDateFormat sdt = new SimpleDateFormat();
-        return String.format("ID: %d, TITOLO: %s, CONTENUTO: %s, DATA: %s, CHIUSO: %s",
-                id, title, content, sdt.format(new Date(date)), isClosed);
+        return String.format("ID: %d, USER-ID: %d, TITOLO: %s, CONTENUTO: %s, DATA: %s, CHIUSO: %s",
+                id, userId, title, content, sdt.format(new Date(date)), isClosed);
     }
 }
